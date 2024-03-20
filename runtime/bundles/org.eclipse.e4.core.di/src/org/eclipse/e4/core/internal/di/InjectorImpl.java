@@ -75,7 +75,8 @@ public class InjectorImpl implements IInjector {
 	private final Set<IdentityWeakReference<Class<?>>> injectedClasses = new LinkedHashSet<>();
 	private final Map<Class<?>, Object> singletonCache = new HashMap<>();
 	private final Map<Class<?>, Set<Binding>> bindings = new HashMap<>();
-	private final Map<AnnotationProxy, Map<AnnotatedElement, Boolean>> annotationsPresent = new HashMap<>();
+	private final Map<AnnotationProxy, Map<AnnotatedElement, Boolean>> annotationsPresent = Collections
+			.synchronizedMap(new HashMap<>());
 
 	// Performance improvement:
 	private final Map<Class<?>, Method[]> methodsCache = Collections.synchronizedMap(new WeakHashMap<>());
@@ -366,12 +367,9 @@ public class InjectorImpl implements IInjector {
 			for (Constructor<?> constructor : sortedConstructors) {
 				// skip private and protected constructors; allow public and package visibility
 				int modifiers = constructor.getModifiers();
-				if (((modifiers & Modifier.PRIVATE) != 0) || ((modifiers & Modifier.PROTECTED) != 0))
-					continue;
-
 				// unless this is the default constructor, it has to be tagged
-				if (!isAnnotationPresent(constructor, AnnotationLookup.INJECT)
-						&& constructor.getParameterTypes().length != 0) {
+				if (((modifiers & Modifier.PRIVATE) != 0) || ((modifiers & Modifier.PROTECTED) != 0) || (!isAnnotationPresent(constructor, AnnotationLookup.INJECT)
+						&& constructor.getParameterTypes().length != 0)) {
 					continue;
 				}
 				ConstructorRequestor requestor = new ConstructorRequestor(constructor, this, objectSupplier, tempSupplier);
@@ -526,9 +524,8 @@ public class InjectorImpl implements IInjector {
 		// 5) create simple classes (implied bindings) - unless we uninject or optional
 		if (!uninject && !requestor.isOptional()) {
 			for (int i = 0; i < actualArgs.length; i++) {
-				if (actualArgs[i] != NOT_A_VALUE)
-					continue; // already resolved
-				if (descriptors[i].hasQualifier(Optional.class))
+				 // already resolved
+				if ((actualArgs[i] != NOT_A_VALUE) || descriptors[i].hasQualifier(Optional.class))
 					continue;
 				try {
 					Class<?> desiredClass = getDesiredClass(descriptors[i].getDesiredType());
@@ -737,9 +734,7 @@ public class InjectorImpl implements IInjector {
 	 */
 	private boolean isOverridden(Method method, List<Class<?>> classHierarchy) {
 		int modifiers = method.getModifiers();
-		if (Modifier.isPrivate(modifiers))
-			return false;
-		if (Modifier.isStatic(modifiers))
+		if (Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers))
 			return false;
 		// method is not private if we reached this line, check not(public OR protected)
 		boolean isDefault = !(Modifier.isPublic(modifiers) || Modifier.isProtected(modifiers));
@@ -844,9 +839,7 @@ public class InjectorImpl implements IInjector {
 			return null;
 		}
 		Type[] actualTypes = ((ParameterizedType) type).getActualTypeArguments();
-		if (actualTypes.length != 1)
-			return null;
-		if (!(actualTypes[0] instanceof Class<?>))
+		if ((actualTypes.length != 1) || !(actualTypes[0] instanceof Class<?>))
 			return null;
 		return (Class<?>) actualTypes[0];
 	}
